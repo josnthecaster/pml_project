@@ -1,0 +1,148 @@
+---
+title: "Practical Machine Learning Project"
+author: "Jose Armando Navarrete"
+date: "Friday, November 20, 2015"
+output: html_document
+keepmd: true
+---
+
+```{r loading_data, echo = FALSE, message=FALSE, warning = FALSE}
+Sys.setlocale("LC_TIME", "english")
+require(caret)
+
+if("training_data" %in% objects()){}else{
+  if(file.exists("pml-training.csv")){
+    training_data <- read.csv("pml-training.csv")
+    }else{
+      download.file(
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+        "pml-training.csv")
+      download.file(
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+        "pml-testing.csv")
+      }
+  }
+
+loadPrData <- function(){
+  pr_data <- read.csv("pml-testing.csv")
+  pr_data
+  }
+```
+
+For this project I had no analize the data first.  
+
+the original data has too many loose values and some colummns are recognized as factor, so on loading, I changed them first to character and then to numeric, then, I made a 70% of the data into the training, and the rest is for testing.
+
+
+```{r make_numeric, echo = FALSE, message=FALSE, warning = FALSE}
+#set the seed
+set.seed(321)
+#change all the data to numeric
+for(col in 8:dim(training_data)[2]-1){
+  if(is.factor(training_data[,col])){
+    training_data[,col] <- as.numeric(
+      as.character(training_data[,col])
+      )
+    }else{
+      training_data[,col] <- as.numeric(training_data[,col])
+      }
+  }
+
+inTrain <- createDataPartition(training_data$classe, p= 0.7, list = FALSE)
+training <- training_data[inTrain,]
+testing <- training_data[-inTrain,]
+
+```
+
+I cleaned the data, and take out any ID data we don't need like **"X"** or any **timestamp**.  
+
+I checked for any zero variance predictors to take them out too, and make the training easier.  
+
+There were still many NA's on some predictors, and they were too many!, so the right way treat so many missing values is not to take them on account, so those are out too.  
+
+```{r make_a_clean_frame, echo = FALSE, message=FALSE, warning = FALSE}
+modelFrame <- function(frame){
+  
+  #id colummns
+  clasCols <- c("X", "user_name", "raw_timestamp_part_1",
+                "raw_timestamp_part_2", "cvtd_timestamp",
+                "new_window", "num_window","classe")
+  
+  #take out the zero variance columns
+  nonzerocols <- !nearZeroVar(frame, saveMetrics = TRUE)$nzv
+  
+  #make a vector of the non id colummns
+  noncols <- !(colnames(frame) %in% clasCols)
+  
+  #check for columns which have non na values
+  nonNa <- sapply(frame, function(x){sum(is.na(x)) < 1})
+  
+  #if all are true (non zero var and non id cols and non na values)
+  #make it into the dataframe to use
+  datacols <- nonzerocols&noncols&nonNa
+  
+  #new dataframe with rigth columns and the values to be predicted
+  nuevoFrame <- data.frame(
+    classe = training$classe, training[,datacols])
+  
+  nuevoFrame
+  }
+
+```
+
+The next step is to make the model!  
+
+For the model I choose **Random Forest** because it is clasification job, at first I tried with a **General Lineal Model** but the scores where not right, something like 1.65... or 4.6719.  
+
+If the model is right, I don't want to do it again!, so if the object exists it "should not" make it again (or cache in the rmd)
+
+```{r model_building, echo = TRUE, cache = TRUE}
+modelar<- function(){
+  nuevo <- modelFrame(training)
+  
+  mymodel <- train(
+    classe ~ .,
+    data = nuevo,
+    trControl = trainControl(method = "cv", number = 3),
+    method = "rf"
+    )
+  
+  mymodel
+  }
+
+if(!("modelfit" %in% objects())){
+     modelfit <- modelar()
+     }
+     
+```
+  
+After making the model, I had to test it, so I tried with a confussion Matrix:  
+
+```{r testing_on_training, echo = TRUE}
+conf1 <- confusionMatrix(training$classe, predict(modelfit, training))
+conf1
+
+```
+     
+And the accuracy if of `r conf1$overall[[1]]*100`%, seems to be *Overfitted*, but have to test it on the testing set.  
+
+```{r testing_on_testing, echo = TRUE}
+conf2 <- confusionMatrix(testing$classe, predict(modelfit, testing))
+conf2
+
+```
+   
+On the testing set the model still hass a high accuracy, as of `r round(conf2$overall[[1]]*100,2)`%, so my expected error rate is `r round((1-conf2$overall[[1]])*100,2)`% which makes me very happy.
+
+And so I try to predict the values and this is what I get:
+
+```{r trying_on_test, echo = TRUE}
+pr <- loadPrData()
+predict(modelfit, pr)
+```
+
+A beautiful chain of characters depicting all right answers.
+
+To make this model better, I would have to analize the correlation matrix and chose the most important features or use a Principal Components PreProcessing.
+
+I didn't include any graphics or exploratory analisys because any of what I tried was too difficult to analyze or check.
